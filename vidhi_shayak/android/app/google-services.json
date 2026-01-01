@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "796021876250",
+    "project_id": "vidhishayak-e4abb",
+    "storage_bucket": "vidhishayak-e4abb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:796021876250:android:d6e9ee53f05e53c8d193a3",
+        "android_client_info": {
+          "package_name": "com.kitm.vidhishayak"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "796021876250-q3774qsm8719ikqpo1801idrsar780sk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFPU6E4tL3QZlx3BpOeQyw5guNFwwt51g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "796021876250-q3774qsm8719ikqpo1801idrsar780sk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "796021876250-cll385lqjtlh9956t2c8lg6kpr8n45kr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.vidhiShayak"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
