@@ -8,8 +8,8 @@ class ElevenLabsService {
   static const String apiKey =
       'sk_8e7778e9674cdb11c13319db1dc9cea4412c29c1ecccfc3b';
 
-  // Voice ID for "George" (British, Warm, Professional) - or any other you prefer
-  static const String voiceId = 'JBFqnCBsd6RMkjVDRZzb';
+  // Voice ID for "Rachel" (American, Calm, Professional) - Female Voice
+  static const String voiceId = '21m00Tcm4TlvDq8ikWAM';
 
   static Future<File?> streamAudio(String text) async {
     const String url = 'https://api.elevenlabs.io/v1/text-to-speech/$voiceId';

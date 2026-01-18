@@ -96,16 +96,20 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                 text: l10n.continueText,
                 onPressed: () {
                   if (_selectedLanguageCode != null) {
-                    if (widget.isFromSettings) {
-                      Navigator.pop(context);
-                    } else {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const CategoryScreen(),
-                        ),
-                      );
-                    }
+                    // Safe navigation wrapper
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!context.mounted) return;
+                      if (widget.isFromSettings) {
+                        Navigator.pop(context);
+                      } else {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CategoryScreen(),
+                          ),
+                        );
+                      }
+                    });
                   }
                 },
               ),

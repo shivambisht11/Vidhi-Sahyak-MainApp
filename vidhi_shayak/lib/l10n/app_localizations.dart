@@ -185,7 +185,7 @@ abstract class AppLocalizations {
   /// No description provided for @catLawyer.
   ///
   /// In en, this message translates to:
-  /// **'I need a lawyer'**
+  /// **'I need a lawyer (Vidhi Sahayak)'**
   String get catLawyer;
 
   /// No description provided for @catLegal.
@@ -197,7 +197,7 @@ abstract class AppLocalizations {
   /// No description provided for @catOther.
   ///
   /// In en, this message translates to:
-  /// **'Other'**
+  /// **'AI Friend (Personal Advisor)'**
   String get catOther;
 
   /// No description provided for @lblStudy.
@@ -221,7 +221,7 @@ abstract class AppLocalizations {
   /// No description provided for @lblOther.
   ///
   /// In en, this message translates to:
-  /// **'Other'**
+  /// **'AI Friend'**
   String get lblOther;
 
   /// No description provided for @errSelectCategory.

@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart'; // Import localization
 import 'home_screen.dart';
 import '../core/app_theme.dart';
 import '../widgets/custom_button.dart';
+import 'language_selection_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
@@ -32,12 +33,16 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
     if (!context.mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomeScreen(selectedCategory: selectedCategory!),
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(selectedCategory: selectedCategory!),
+          ),
+        );
+      }
+    });
   }
 
   @override
@@ -58,6 +63,17 @@ class _CategoryScreenState extends State<CategoryScreen> {
         title: Text(l10n.categoryTitle),
         backgroundColor: AppTheme.primaryColor,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LanguageSelectionScreen(),
+              ),
+            );
+          },
+        ),
       ),
       body: SafeArea(
         child: Column(

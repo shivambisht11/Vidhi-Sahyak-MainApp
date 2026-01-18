@@ -14,6 +14,8 @@ import 'language_selection_screen.dart';
 import 'login_screen.dart';
 import '../main.dart'; // To access global themeNotifier
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'home_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String selectedCategory;
@@ -39,6 +41,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool _loading = false;
+  bool _stopRequested = false;
   User? _user;
   String? _currentSessionId;
   List<MessageModel> messages = [];
@@ -141,6 +144,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _stopGeneration() {
+    setState(() {
+      _stopRequested = true;
+      _loading = false;
+    });
+  }
+
   void _scrollToBottom({
     Duration duration = const Duration(milliseconds: 300),
   }) {
@@ -168,6 +178,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       messages.add(MessageModel(text: text, isUser: true));
       _loading = true;
+      _stopRequested = false;
     });
     _scrollToBottom();
 
@@ -221,15 +232,25 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
 
-      final reply = await _gemini.sendMessage(text, widget.selectedCategory);
+      if (_stopRequested) return;
+      if (!mounted) return;
+
+      final targetLanguage = Localizations.localeOf(context).languageCode;
+      final reply = await _gemini.sendMessage(
+        text,
+        widget.selectedCategory,
+        targetLanguage,
+      );
+
+      if (_stopRequested) return;
 
       // Calculate reply words
       final replyWords = reply.trim().split(RegExp(r'\s+')).length;
 
-      setState(() => _loading = false);
-
       // 1. Animate locally for ALL users (Typewriter effect)
       await _addAiMessageLocal(reply);
+
+      setState(() => _loading = false);
 
       // 2. Save to Firestore (if logged in)
       if (_user != null && _currentSessionId != null) {
@@ -266,6 +287,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _addAiMessageLocal(String fullText) async {
     String temp = "";
     for (int i = 0; i < fullText.length; i++) {
+      if (_stopRequested) break;
       temp += fullText[i];
       if (messages.isNotEmpty && !messages.last.isUser) {
         setState(() {
@@ -280,9 +302,13 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
 
-      // Scroll with short duration for smooth typing effect
-      _scrollToBottom(duration: const Duration(milliseconds: 50));
-      await Future.delayed(const Duration(milliseconds: 25));
+      // Add delay for typewriter effect
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      // Auto-scroll logic (keep scrolling to bottom while typing)
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
     }
   }
 
@@ -306,7 +332,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final l10n = AppLocalizations.of(context)!;
     switch (category) {
       case 'study':
-        return l10n.catStudy;
+        return l10n.lblStudy;
       case 'lawyer':
         return l10n.lblLawyer;
       case 'legal':
@@ -316,6 +342,76 @@ class _ChatScreenState extends State<ChatScreen> {
       default:
         return category;
     }
+  }
+
+  Future<void> _showCategoryDialog() async {
+    final l10n = AppLocalizations.of(context)!;
+    final categories = [
+      {'id': 'study', 'label': l10n.catStudy, 'icon': Icons.school_rounded},
+      {'id': 'lawyer', 'label': l10n.catLawyer, 'icon': Icons.gavel_rounded},
+      {'id': 'legal', 'label': l10n.catLegal, 'icon': Icons.balance_rounded},
+      {'id': 'other', 'label': l10n.catOther, 'icon': Icons.more_horiz_rounded},
+    ];
+
+    await showDialog(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(
+          l10n.categoryTitle,
+        ), // Or a specific string like "Change Category"
+        children: categories.map((cat) {
+          return SimpleDialogOption(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+
+              if (cat['id'] == widget.selectedCategory) return;
+
+              // Save and Navigate
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString("user_category", cat['id'] as String);
+
+              if (!mounted) return;
+
+              // Navigate to Home with new category
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      HomeScreen(selectedCategory: cat['id'] as String),
+                ),
+              );
+            },
+            child: Row(
+              children: [
+                Icon(
+                  cat['icon'] as IconData,
+                  color: AppTheme.primaryColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    cat['label'] as String,
+                    style: const TextStyle(fontSize: 16),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (cat['id'] == widget.selectedCategory) ...[
+                  const SizedBox(width: 8), // Small gap before checkmark
+                  const Icon(
+                    Icons.check_rounded,
+                    color: AppTheme.primaryColor,
+                    size: 20,
+                  ),
+                ],
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   @override
@@ -336,6 +432,14 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.grid_view_rounded),
+              onPressed: _showCategoryDialog,
+              tooltip: "Change Category",
+            ),
+            const SizedBox(width: 8),
+          ],
           leading: Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.menu_rounded),
@@ -406,8 +510,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 controller: _controller,
                 textCapitalization: TextCapitalization.sentences,
                 style: Theme.of(context).textTheme.bodyLarge,
+                enabled: !_loading, // Disable input while loading
                 decoration: InputDecoration(
-                  hintText: AppLocalizations.of(context)!.chatTypeMessage,
+                  hintText: _loading
+                      ? "AI is typing..."
+                      : AppLocalizations.of(context)!.chatTypeMessage,
                   hintStyle: Theme.of(context).textTheme.bodyMedium,
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
@@ -432,15 +539,18 @@ class _ChatScreenState extends State<ChatScreen> {
                 Icons.mic_rounded,
                 color: Theme.of(context).primaryColor,
               ),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        VoiceChatScreen(category: widget.selectedCategory),
-                  ),
-                );
-              },
+              onPressed: _loading
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => VoiceChatScreen(
+                            category: widget.selectedCategory,
+                          ),
+                        ),
+                      );
+                    },
             ),
           ),
           const SizedBox(width: 8),
@@ -449,10 +559,15 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Theme.of(context).primaryColor,
               shape: BoxShape.circle,
             ),
-            child: IconButton(
-              icon: const Icon(Icons.send_rounded, color: Colors.white),
-              onPressed: sendMessage,
-            ),
+            child: _loading
+                ? IconButton(
+                    icon: const Icon(Icons.stop_rounded, color: Colors.white),
+                    onPressed: _stopGeneration,
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.send_rounded, color: Colors.white),
+                    onPressed: sendMessage,
+                  ),
           ),
         ],
       ),
@@ -844,6 +959,27 @@ class _ChatScreenState extends State<ChatScreen> {
                     },
                   ),
 
+                  // Change Category
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.category_rounded,
+                        size: 20,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    title: const Text(
+                      "Change Category",
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    onTap: _showCategoryDialog,
+                  ),
+
                   // Language
                   ListTile(
                     leading: Container(
@@ -905,7 +1041,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           _currentSessionId = null;
                           messages.clear();
                         });
-                        Navigator.pop(context);
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                        }
                       },
                     ),
 

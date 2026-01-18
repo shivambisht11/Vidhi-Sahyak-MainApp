@@ -40,15 +40,16 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
   bool _isPaused = false;
   int _retryCount = 0;
 
-  String? _currentSpeakingSentence; // Highlight state
   int _currentWordIndex = 0; // New: Word tracking
   Timer? _wordHighlightTimer; // New: Timer
   final ScrollController _scrollController = ScrollController();
   late AnimationController _breathingController;
+  int _playbackSessionId = 0; // Fix: Session ID for playback control
 
   // New Voice Selection State
   List<Map<dynamic, dynamic>> _availableVoices = [];
   Map<dynamic, dynamic>? _currentVoice;
+  String? _currentSpeakingSentence;
 
   @override
   void dispose() {
@@ -191,7 +192,6 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
     if (available && mounted) {
       final role = _getCategoryRole(context);
       // Localized greeting
-      final l10n = AppLocalizations.of(context)!;
       final greeting = _selectedLocale == 'hi-IN'
           ? "नमस्ते, मैं आपका $role हूँ। मैं आपकी कैसे मदद कर सकता हूँ?" // Fixed Hindi grammar
           : "Hello, I am your $role. How can I help you today?";
@@ -231,7 +231,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
       },
       localeId: _selectedLocale,
       listenFor: const Duration(seconds: 30),
-      pauseFor: Duration(seconds: Platform.isAndroid ? 5 : 3),
+      pauseFor: const Duration(seconds: 10),
       listenOptions: stt.SpeechListenOptions(
         partialResults: true,
         cancelOnError: true,
@@ -280,6 +280,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
       _currentSpeakingSentence = null;
     });
 
+    if (!mounted) return;
     final role = _getCategoryRole(context);
     final languageInstruction = _selectedLocale == 'hi-IN'
         ? " (Reply in Hindi. act as $role. Speak naturally...)"
@@ -288,6 +289,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
     final reply = await _gemini.sendMessage(
       text + languageInstruction,
       widget.category,
+      _selectedLocale.substring(0, 2),
     );
 
     // Increment usage for User Input
@@ -319,8 +321,13 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
 
     // Clear queue of chunks
     _speakQueue.clear();
-    await _flutterTts.stop();
-    await _audioPlayer.stop(); // Stop audio player
+    _playbackSessionId++; // New Session
+    _wordHighlightTimer?.cancel(); // Cancel any existing highlighting
+
+    // We don't await stop here because it might block if we do
+    // And we have the session ID to protect us.
+    _flutterTts.stop();
+    _audioPlayer.stop();
 
     setState(() {
       _state = VoiceState.speaking;
@@ -329,6 +336,26 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
       _currentWordIndex = 0;
       _isPaused = false;
     });
+
+    // Configure Audio Context Once
+    await _audioPlayer.setAudioContext(
+      AudioContext(
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playAndRecord,
+          options: {
+            AVAudioSessionOptions.defaultToSpeaker,
+            AVAudioSessionOptions.allowBluetooth,
+          },
+        ),
+        android: AudioContextAndroid(
+          isSpeakerphoneOn: true,
+          stayAwake: true,
+          contentType: AndroidContentType.speech,
+          usageType: AndroidUsageType.assistant,
+          audioFocus: AndroidAudioFocus.gain,
+        ),
+      ),
+    );
 
     // Scroll to top
     if (_scrollController.hasClients) {
@@ -392,30 +419,14 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
     }
 
     // 4. Start processing queue (playing first ready chunk)
-    if (!_isSpeakingQueue) {
-      await _audioPlayer.setAudioContext(
-        AudioContext(
-          iOS: AudioContextIOS(
-            category: AVAudioSessionCategory.playAndRecord,
-            options: {
-              AVAudioSessionOptions.defaultToSpeaker,
-              AVAudioSessionOptions.allowBluetooth,
-            },
-          ),
-          android: AudioContextAndroid(
-            isSpeakerphoneOn: true,
-            stayAwake: true,
-            contentType: AndroidContentType.speech,
-            usageType: AndroidUsageType.assistant,
-            audioFocus: AndroidAudioFocus.gain,
-          ),
-        ),
-      );
-      _processSpeakQueue();
-    }
+    // Always start a new processor with the new session ID
+    _processSpeakQueue(_playbackSessionId);
   }
 
-  Future<void> _processSpeakQueue() async {
+  Future<void> _processSpeakQueue(int sessionId) async {
+    // 🛑 Check if this loop is from an old session
+    if (sessionId != _playbackSessionId) return;
+
     if (_speakQueue.isEmpty) {
       _isSpeakingQueue = false;
       if (mounted && !_isDisposed && !_isPaused) {
@@ -499,7 +510,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
 
     if (mounted && !_isDisposed && !_isPaused) {
       if (mounted) setState(() => _currentWordIndex = 0);
-      _processSpeakQueue();
+      _processSpeakQueue(sessionId);
     } else {
       _isSpeakingQueue = false;
       _wordHighlightTimer?.cancel();
@@ -508,29 +519,31 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
   }
 
   String _cleanTextForTTS(String text) {
-    // Remove markdown bold/italic but keep the words
-    var clean = text.replaceAll(RegExp(r'[\*\_]'), '');
+    // 1. Remove Headers (### Title)
+    var clean = text.replaceAll(RegExp(r'#+\s*'), '');
 
-    // Remove markdown links [Link](url) -> Link
+    // 2. Remove Bold/Italic (**** or **) including the markers
+    clean = clean.replaceAll(RegExp(r'[\*\_]+'), '');
+
+    // 3. Remove Markdown Links [Text](URL) -> Text
     clean = clean.replaceAllMapped(
       RegExp(r'\[(.*?)\]\(.*?\)'),
       (match) => match.group(1) ?? '',
     );
 
-    // Replace breaks with pauses
+    // 4. Replace newlines with full stops for pausing
     clean = clean.replaceAll('\n', '. ');
 
-    // Remove complex chars but KEEP punctuation responsible for intonation
-    // Removed removal of dashes as they might be used for pauses
-    // clean = clean.replaceAll(RegExp(r'[-—\/\\>#]'), ' ');
+    // 5. Remove problematic characters but keep punctuation
+    // Remove emojis
+    clean = clean.replaceAll(
+      RegExp(r'[\u{1F600}-\u{1F64F}]', unicode: true),
+      '',
+    );
+    // Remove other symbols
+    clean = clean.replaceAll(RegExp(r'[~`>|]'), '');
 
-    // Remove dashes and underscores
-    clean = clean.replaceAll(RegExp(r'[-—_]'), ' ');
-
-    // Only remove characters that are definitely non-verbal noise
-    clean = clean.replaceAll(RegExp(r'[#`~]'), '');
-
-    // Collapse multiple spaces
+    // 6. Collapse multiple spaces
     clean = clean.replaceAll(RegExp(r'\s+'), ' ');
 
     return clean.trim();
@@ -558,8 +571,9 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
     if (_displayText.contains("permission")) return l10n.voiceOpenSettings;
     if (_state == VoiceState.listening) return l10n.voiceTapFinish;
     if (_displayText.startsWith("Network Error")) return l10n.voiceRetry;
-    if (_displayText == l10n.voiceInit)
+    if (_displayText == l10n.voiceInit) {
       return l10n.voiceInit.toUpperCase(); // Or new key
+    }
     return l10n.voiceTapSpeak.toUpperCase();
   }
 
@@ -771,7 +785,7 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
                             // final state = _audioPlayer.state;
 
                             if (_speakQueue.isNotEmpty && !_isSpeakingQueue) {
-                              _processSpeakQueue();
+                              _processSpeakQueue(_playbackSessionId);
                             }
                           } else {
                             setState(() => _isPaused = true);
@@ -907,14 +921,13 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
       // Fallback to first valid voice if no premium found
       bestVoice ??= validVoices.first;
 
-      if (bestVoice != null) {
-        setState(() => _currentVoice = bestVoice);
-        await _flutterTts.setVoice({
-          "name": bestVoice["name"],
-          "locale": bestVoice["locale"],
-        });
-        debugPrint("Selected Voice: ${bestVoice["name"]}");
-      }
+      // bestVoice is now non-null because validVoices is not empty (checked earlier)
+      setState(() => _currentVoice = bestVoice);
+      await _flutterTts.setVoice({
+        "name": bestVoice["name"],
+        "locale": bestVoice["locale"],
+      });
+      debugPrint("Selected Voice: ${bestVoice["name"]}");
     } catch (e) {
       debugPrint("Error selecting voice: $e");
     }
@@ -991,7 +1004,9 @@ class _VoiceChatScreenState extends State<VoiceChatScreen>
                             "name": voice["name"],
                             "locale": voice["locale"],
                           });
-                          Navigator.pop(ctx);
+                          if (ctx.mounted) {
+                            Navigator.pop(ctx);
+                          }
                         },
                       );
                     },

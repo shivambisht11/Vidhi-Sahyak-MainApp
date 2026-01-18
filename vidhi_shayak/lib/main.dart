@@ -13,11 +13,15 @@ import 'screens/onboarding_screen.dart';
 import 'screens/category_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
 
 // Theme State Globa
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 // Locale State Global
 final ValueNotifier<Locale> localeNotifier = ValueNotifier(const Locale('en'));
+
+// Navigator Key removed as we don't need resume splash anymore
+// final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +48,7 @@ Future<void> main() async {
   );
 }
 
-class VidhiShayak extends StatelessWidget {
+class VidhiShayak extends StatefulWidget {
   final bool showOnboarding;
   final String? userCategory;
 
@@ -55,17 +59,21 @@ class VidhiShayak extends StatelessWidget {
   });
 
   @override
+  State<VidhiShayak> createState() => _VidhiShayakState();
+}
+
+class _VidhiShayakState extends State<VidhiShayak> {
+  // Lifecycle methods removed to stop Splash on Resume.
+  // Now it only shows on Cold Start (initial Launch).
+
+  @override
   Widget build(BuildContext context) {
     Widget homeScreen;
 
-    // Onboarding → Language Selection (if in flow) → Category → Chat → (optional login)
-    // Note: If onboarding is shown, it navigates to LanguageSelection.
-    // If onboarding is NOT shown, we assume language is already set (or default).
-
-    if (showOnboarding) {
+    if (widget.showOnboarding) {
       homeScreen = const OnboardingScreen();
-    } else if (userCategory != null) {
-      homeScreen = HomeScreen(selectedCategory: userCategory!);
+    } else if (widget.userCategory != null) {
+      homeScreen = HomeScreen(selectedCategory: widget.userCategory!);
     } else {
       homeScreen = const CategoryScreen();
     }
@@ -77,6 +85,7 @@ class VidhiShayak extends StatelessWidget {
           valueListenable: localeNotifier,
           builder: (context, locale, _) {
             return MaterialApp(
+              // navigatorKey removed
               title: "VidhiShayak",
               theme: AppTheme.lightTheme,
               darkTheme: AppTheme.darkTheme,
@@ -93,7 +102,8 @@ class VidhiShayak extends StatelessWidget {
                 Locale('hi'), // Hindi
               ],
               debugShowCheckedModeBanner: false,
-              home: homeScreen,
+              // Start with Splash Screen, pass resolved homeScreen as next destination
+              home: SplashScreen(nextScreen: homeScreen),
               routes: {'/login': (_) => const LoginScreen()},
             );
           },

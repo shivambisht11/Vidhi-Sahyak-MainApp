@@ -54,13 +54,13 @@ class AppLocalizationsHi extends AppLocalizations {
   String get catStudy => 'मुझे एक अध्ययन साथी चाहिए';
 
   @override
-  String get catLawyer => 'मुझे एक वकील चाहिए';
+  String get catLawyer => 'मुझे एक वकील चाहिए (विधि सहायक)';
 
   @override
   String get catLegal => 'मुझे कानूनी सलाह चाहिए';
 
   @override
-  String get catOther => 'अन्य';
+  String get catOther => 'AI दोस्त (Personal Advisor)';
 
   @override
   String get lblStudy => 'अध्ययन साथी';
@@ -72,7 +72,7 @@ class AppLocalizationsHi extends AppLocalizations {
   String get lblLegal => 'कानूनी सलाह';
 
   @override
-  String get lblOther => 'अन्य';
+  String get lblOther => 'AI दोस्त';
 
   @override
   String get errSelectCategory => 'कृपया एक श्रेणी चुनें';
